@@ -1,0 +1,326 @@
+/*
+  Software serial multple serial test
+ 
+ Receives from the hardware serial, sends to software serial.
+ Receives from software serial, sends to hardware serial.
+ 
+ The circuit: 
+ * RX is digital pin 13 (connect to TX of other device)
+ * TX is digital pin 12 (connect to RX of other device)
+ 
+ */
+#include <SoftwareSerial.h>
+ #include "pitches.h"
+ #include "IRTemp.h"
+int RX = 13 ; // connect to TX of BlueTooth module
+int TX = 12 ; // connect to RX of BlueTooth module
+SoftwareSerial blueToothSerial(RX, TX);
+
+int state = 0 ;
+char cmdBuffer[256] ;
+char sol[] = "3249" ;
+int count = 0 ;
+int melody[] = {
+  NOTE_C4, NOTE_G3,NOTE_G3, NOTE_A3, NOTE_G3,0, NOTE_B3, NOTE_C4};
+
+// note durations: 4 = quarter note, 8 = eighth note, etc.:
+int noteDurations[] = {
+  4, 8, 8, 4,4,4,4,4 };
+static const byte PIN_DATA    = 2;
+static const byte PIN_CLOCK   = 3;  // Must be either pin 2 or pin 3
+static const byte PIN_ACQUIRE = 4;
+
+
+static const bool SCALE=false;  // Celcius: false, Farenheit: true
+
+IRTemp irTemp(PIN_ACQUIRE, PIN_CLOCK, PIN_DATA);  
+  
+  
+void setup()  
+{
+  // Open serial communications and wait for port to open:
+  Serial.begin(9600);
+   while (!Serial) {
+    ; // wait for serial port to connect. Needed for Leonardo only
+  }
+
+  Serial.println("Good morning!\nWelcome to the WonderLand!");
+
+  // set the data rate for the SoftwareSerial port
+  blueToothSerial.begin(9600);
+  
+  //印出 變數值
+  Serial.print("state:") ;
+  Serial.println(state) ;
+  Serial.println("") ;
+  
+  //查詢 藍芽模組之名稱與位址
+  sendATCommand("NAME");
+  delay(100) ;
+  sendATCommand("LADDR");
+  delay(100) ;
+ 
+}
+
+void loop() // run over and over
+{ 
+  char* cmd ;
+  String dataStrIn, cmdStr,a ;
+  cmdStr = process_Serial_Input() ;
+  dataStrIn = process_BT_Input() ;
+  if (blueToothSerial.available()){ //檢測藍芽模組是否接收到資料 
+    cmd = fetchCommand() ;  //抓取藍芽模組接收到的命令
+    Serial.println("") ;
+    if(strlen(cmd) > 1){ 
+	  //資料長度大於1時，資料為訊息
+      Serial.print("Message: ")  ;
+      Serial.println(cmd) ;
+    }else{ 
+	  //資料長度等於1時，資料為指令
+      Serial.print("Command: ") ;
+      Serial.println(cmd) ;
+      execute(cmd) ;  //執行命令
+    }
+  }
+  if (Serial.available())
+    blueToothSerial.write(Serial.read());
+    if (state==99){
+    sound();
+    }
+    
+    
+    
+    float irTemperature = irTemp.getIRTemperature(SCALE);
+  printTemperature("IR", irTemperature);
+
+  float ambientTemperature = irTemp.getAmbientTemperature(SCALE);
+  printTemperature("Ambient", ambientTemperature);
+
+  delay(1000);
+  if(irTemperature > 26){
+  cmdStr="a";
+ state=99;
+  }
+ 
+    if(dataStrIn != "") 
+        process(dataStrIn) ;
+        
+    if(cmdStr == "a") {
+        sendMessageToCellPhone("0911291890","Happy holiday電話號碼") ;
+    } else {
+        if(cmdStr == "b") {
+            sendMessageToCellPhone("0911291890","Happy New year") ;
+        }else {
+            if( cmdStr.length()>0 ){
+                //blueToothSerial.print(cmdStr);
+                Serial.print("Inputed command:") ;
+                Serial.println(cmdStr) ;
+                process(cmdStr) ;
+                
+            }
+        }
+    }    
+    
+    
+    
+    
+    
+    
+    
+}
+char* fetchCommand(){
+  char ch ;
+  char* cmd ;
+  int count = 0 ;
+  while(blueToothSerial.available()){
+      ch = blueToothSerial.read() ;
+      cmdBuffer[count] = ch ;
+      count++ ;
+      delay(5) ;
+    }
+    cmdBuffer[count] = 0 ;
+    cmd = cmdBuffer ;
+    return cmd ;
+}
+
+void execute(char* cmd){
+  char ch = cmd[0] ;
+  switch(ch){
+      case 'a':
+        state++ ;
+        Serial.println("Execution: Increment") ;
+        break ;
+      case 'b':
+        state-- ;
+        Serial.println("Execution: Decrement") ;
+        break ;
+      case 'c':
+        state *= 2 ;
+        Serial.println("Execution: Double") ;
+        break ;
+      case 'd':
+        state /=2 ;
+        Serial.println("Execution: Half") ;
+        break ;
+      case 'e':
+        state = 99 ;
+        Serial.println("Execution: Zero") ;
+        break ;
+    }
+    Serial.print("Result: state = " );
+    Serial.println(state)  ;
+}
+
+void sendATCommand(char *command){
+   blueToothSerial.print("AT");
+   if(strlen(command) > 1){
+       blueToothSerial.print("+");
+       blueToothSerial.print(command);
+       delay(100);
+   }
+   blueToothSerial.print("\r\n");
+}
+void sound(){
+   // iterate over the notes of the melody:
+  for (int thisNote = 0; thisNote < 8; thisNote++) {
+
+    // to calculate the note duration, take one second 
+    // divided by the note type.
+    //e.g. quarter note = 1000 / 4, eighth note = 1000/8, etc.
+    int noteDuration = 1000/noteDurations[thisNote];
+    tone(8, melody[thisNote],noteDuration);
+
+    // to distinguish the notes, set a minimum time between them.
+    // the note's duration + 30% seems to work well:
+    int pauseBetweenNotes = noteDuration * 1.30;
+    delay(pauseBetweenNotes);
+    // stop the tone playing:
+    noTone(8);
+  }
+}
+
+
+
+void printTemperature(
+  char  *type,
+  float  temperature) {
+
+  Serial.print(type);
+  Serial.print(" temperature: ");
+
+  if (isnan(temperature)) {
+    Serial.println("Failed");
+  }
+  else {
+    Serial.print(temperature);
+    Serial.println(SCALE  ?  " F"  :  " C");
+  }
+}
+
+
+void sendMessageToCellPhone(String phoneNumber, String msg){
+    String fullMsgToSend ;
+    fullMsgToSend = "$sms" + phoneNumber + ":" + msg + "&" ;
+    blueToothSerial.print(fullMsgToSend);
+    Serial.println(fullMsgToSend) ;
+}
+String process_Serial_Input(){
+    char* data ;
+    String dataStr="" ;
+    if (Serial.available()){ //檢測Serial port是否接收到資料 
+        data = fetch_Serial_Command() ;  //抓取Serial port接收到的命令
+        dataStr = String(data) ;
+    } 
+    return dataStr ;
+}
+String process_BT_Input(){
+    char* data ;
+    String dataStr ="";
+    if (blueToothSerial.available()){ //檢測藍芽模組是否接收到資料 
+        data = fetch_BT_Command() ;  //抓取藍芽模組接收到的命令
+        dataStr = String(data) ;
+    } 
+    return dataStr ;
+}
+void process(String dataStr){
+    char ans[4] ;
+    String commandStr , numberStr ;
+    String msg ;
+    String result ;
+    if(dataStr.substring(0,3) == "cmd"){
+          commandStr = dataStr.substring(3,8) ;  //get command
+          if(commandStr == "check") {
+              numberStr = dataStr.substring(8,12) ;
+              for(int i=0;i<numberStr.length();i++) ans[i]=numberStr.charAt(i) ;  //get numbers
+              result = check(ans,sol) ;  // check 
+              if(result == "4A") {
+                  Serial.println("done") ;
+              }
+              count++ ;
+              msg = "count: " + String(count) + " Your guess is : " + String(ans) + " result: " + result ;
+              Serial.println( msg) ;
+          }
+          if(commandStr == "start"){
+              Serial.println("start game") ;
+              count = 0 ;
+              //sol = ?
+          }
+          if(commandStr == "solut"){
+              Serial.println(String(sol)) ;
+          }
+     } // if(dataStr.substring(0,3) == "cmd")
+      else{
+          Serial.print("Message: ")  ;
+          Serial.println(dataStr) ;
+    } 
+    
+}
+
+String check(char* ans, char *sol){
+    int i, j ;
+    int a = 0, b= 0 ;
+    String msg="" ;
+    for(i=0;i<4;i++) 
+        for(j=0;j<4;j++) {
+            if( ans[i] == sol[j]) {
+                if( i== j)
+                    a++ ;
+                else
+                    b++ ;
+            }
+        }
+    //msg = String(a) + "A" + String(b) + "B" ;
+    if(a>0)  msg += String(a) + "A" ;
+    if(b>0)  msg += String(b) + "B" ;
+    if(a+b == 0) msg = "0A0B" ;
+    return msg ;
+}
+char* fetch_BT_Command(){
+    char ch ;
+    char* cmd ;
+    int count = 0 ;
+    while(blueToothSerial.available()){
+        ch = blueToothSerial.read() ;
+        cmdBuffer[count] = ch ;
+        count++ ;
+        delay(5) ;
+    }
+    cmdBuffer[count] = 0 ;
+    cmd = cmdBuffer ;
+    return cmd ;
+}
+char* fetch_Serial_Command(){
+    char ch ;
+    char* cmd ;
+    int count = 0 ;
+    while(Serial.available()){
+        ch = Serial.read() ;
+        cmdBuffer[count] = ch ;
+        count++ ;
+        delay(5) ;
+    }
+    cmdBuffer[count] = 0 ;
+    cmd = cmdBuffer ;
+    return cmd ;
+}
+
